@@ -129,7 +129,7 @@ jobs:
       # Only run Claude action if this was triggered by a comment
       - name: Run Claude Code Action
         if: github.event_name == 'issue_comment' || github.event_name == 'pull_request_review_comment'
-        uses: grll/claude-code-action@beta
+        uses: nimishchaudhari/claude-code-action-max-sub@main
         with:
           use_oauth: true
           claude_access_token: ${{ steps.refresh_token.outputs.access_token }}

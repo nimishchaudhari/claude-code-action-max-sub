@@ -218,23 +218,21 @@ jobs:
       # Only run Claude action if this was triggered by a comment
       - name: Run Claude Code Action (OAuth)
         if: (github.event_name == 'issue_comment' || github.event_name == 'pull_request_review_comment') && steps.refresh_token.outcome == 'success'
-        uses: com/nimishchaudhari/claude-code-action-max-sub@main
+        uses: nimishchaudhari/claude-code-action-max-sub@main
         with:
           use_oauth: true
           claude_access_token: ${{ steps.refresh_token.outputs.access_token }}
           claude_refresh_token: ${{ steps.refresh_token.outputs.new_refresh_token || secrets.CLAUDE_REFRESH_TOKEN }}
           claude_expires_at: ${{ steps.refresh_token.outputs.expires_at }}
           anthropic_model: 'claude-opus-4-20250514'
-          max_thinking_length: 20000
       
       # Fallback to API key if OAuth refresh failed
       - name: Run Claude Code Action (API Key Fallback)
         if: (github.event_name == 'issue_comment' || github.event_name == 'pull_request_review_comment') && steps.refresh_token.outcome == 'failure'
-        uses: com/nimishchaudhari/claude-code-action-max-sub@main
+        uses: nimishchaudhari/claude-code-action-max-sub@main
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           anthropic_model: 'claude-opus-4-20250514'
-          max_thinking_length: 20000
 
       # Log success for scheduled runs
       - name: Log Scheduled Refresh Success

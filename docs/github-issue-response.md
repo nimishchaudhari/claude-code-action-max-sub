@@ -67,7 +67,7 @@ jobs:
           echo "CLAUDE_ACCESS_TOKEN=$ACCESS_TOKEN" >> $GITHUB_ENV
 
       - name: Run Claude Code Action
-        uses: grll/claude-code-action@beta
+        uses: nimishchaudhari/claude-code-action-max-sub@main
         with:
           use_oauth: true
           claude_access_token: ${{ env.CLAUDE_ACCESS_TOKEN }}

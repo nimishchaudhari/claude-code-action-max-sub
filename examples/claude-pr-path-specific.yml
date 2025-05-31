@@ -25,7 +25,7 @@ jobs:
           fetch-depth: 1
 
       - name: Claude Code Review
-        uses: grll/claude-code-action@beta
+        uses: nimishchaudhari/claude-code-action-max-sub@main
         with:
           use_oauth: true
           claude_access_token: ${{ secrets.CLAUDE_ACCESS_TOKEN }}

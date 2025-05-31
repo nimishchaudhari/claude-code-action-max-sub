@@ -122,7 +122,7 @@ jobs:
           python refresh-token.py
 
       - name: Run Claude Code Action
-        uses: grll/claude-code-action@beta
+        uses: nimishchaudhari/claude-code-action-max-sub@main
         with:
           use_oauth: true
           claude_access_token: ${{ steps.refresh_token.outputs.access_token || secrets.CLAUDE_ACCESS_TOKEN }}

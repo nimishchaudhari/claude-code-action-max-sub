@@ -74,7 +74,7 @@ This option refreshes the token on each run without updating GitHub secrets.
              echo "CLAUDE_ACCESS_TOKEN=$ACCESS_TOKEN" >> $GITHUB_ENV
 
          - name: Run Claude Code Action
-           uses: grll/claude-code-action@beta
+           uses: nimishchaudhari/claude-code-action-max-sub@main
            with:
              use_oauth: true
              claude_access_token: ${{ env.CLAUDE_ACCESS_TOKEN }}
@@ -174,7 +174,7 @@ If OAuth token refresh is not working due to endpoint restrictions, use API key 
        
        steps:
          - name: Run Claude Code Action
-           uses: grll/claude-code-action@beta
+           uses: nimishchaudhari/claude-code-action-max-sub@main
            with:
              anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
    ```
