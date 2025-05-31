@@ -117,8 +117,12 @@ For custom implementations, use the provided scripts:
 
 1. **Token Expiration Problem**: Claude OAuth access tokens expire after ~8-24 hours
 2. **Solution**: Use the refresh token to get a new access token before each Claude action
-3. **API Endpoint**: `POST https://console.anthropic.com/v1/oauth/token`
+3. **API Endpoint**: `POST https://console.anthropic.com/v1/oauth/token` (⚠️ **Note**: This endpoint may be blocked by Cloudflare)
 4. **Payload**: `{ "grant_type": "refresh_token", "refresh_token": "YOUR_REFRESH_TOKEN" }`
+
+### ⚠️ Important OAuth Limitation
+
+The OAuth token refresh endpoint is currently protected by Cloudflare and may return a 403 error (code 1010). If you encounter this issue, please use API key authentication instead.
 
 ## Comparison of Options
 
@@ -131,6 +135,43 @@ For custom implementations, use the provided scripts:
 | External dependencies | None | None | Node.js/Python |
 | Best for | Most users | Power users | Custom workflows |
 
+## Alternative: API Key Authentication
+
+If OAuth token refresh is not working due to endpoint restrictions, use API key authentication:
+
+1. **Get an API Key**:
+   - Go to [console.anthropic.com](https://console.anthropic.com)
+   - Navigate to API Keys section
+   - Create a new API key
+
+2. **Add to GitHub Secrets**:
+   - Add `ANTHROPIC_API_KEY` to your repository secrets
+
+3. **Use the API Key Workflow**:
+   ```yaml
+   name: Claude Code Assistant (API Key)
+   
+   on:
+     issue_comment:
+       types: [created]
+   
+   permissions:
+     contents: write
+     issues: write
+     pull-requests: write
+   
+   jobs:
+     claude:
+       if: contains(github.event.comment.body, '@claude')
+       runs-on: ubuntu-latest
+       
+       steps:
+         - name: Run Claude Code Action
+           uses: grll/claude-code-action@beta
+           with:
+             anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+   ```
+
 ## Troubleshooting
 
 ### Common Issues
@@ -138,10 +179,16 @@ For custom implementations, use the provided scripts:
 1. **"OAuth token has expired"**
    - Ensure `CLAUDE_REFRESH_TOKEN` is set correctly
    - Check if the refresh token itself has expired (rare)
+   - Consider using API key authentication as an alternative
 
-2. **"Failed to refresh token"**
-   - Verify the refresh token is valid
-   - Check GitHub Actions logs for specific error messages
+2. **"Failed to refresh token" or "HTTP 403: error code: 1010"**
+   - This is a Cloudflare protection error on the OAuth endpoint
+   - **Solution**: Use API key authentication instead of OAuth
+   - Add `ANTHROPIC_API_KEY` to your secrets and use the API key workflow
+
+3. **"Error refreshing token"**
+   - The OAuth refresh endpoint may be temporarily unavailable
+   - Fallback to API key authentication is recommended
 
 3. **Claude doesn't respond**
    - Ensure comment contains `@claude`

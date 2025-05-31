@@ -34,8 +34,11 @@ jobs:
 
       - name: Refresh Claude OAuth Token
         id: refresh_token
+        continue-on-error: true
         env:
+          CLAUDE_ACCESS_TOKEN: ${{ secrets.CLAUDE_ACCESS_TOKEN }}
           CLAUDE_REFRESH_TOKEN: ${{ secrets.CLAUDE_REFRESH_TOKEN }}
+          CLAUDE_EXPIRES_AT: ${{ secrets.CLAUDE_EXPIRES_AT }}
         run: |
           python - << 'EOF'
           import os
@@ -43,11 +46,21 @@ jobs:
           import urllib.request
           import urllib.error
           
+          def check_token_expired(expires_at):
+              if not expires_at:
+                  return True
+              try:
+                  import time
+                  return time.time() >= float(expires_at) - 300  # Refresh 5 minutes before expiry
+              except:
+                  return True
+          
           def refresh_token(refresh_token):
               url = "https://console.anthropic.com/v1/oauth/token"
               data = json.dumps({
                   "grant_type": "refresh_token",
-                  "refresh_token": refresh_token
+                  "refresh_token": refresh_token,
+                  "client_id": "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
               }).encode('utf-8')
               
               req = urllib.request.Request(url, data=data)
@@ -61,10 +74,22 @@ jobs:
                   error_body = e.read().decode('utf-8')
                   raise Exception(f"HTTP {e.code}: {error_body}")
           
-          # Get refresh token from environment
+          # Get tokens from environment
           refresh_token_value = os.environ.get("CLAUDE_REFRESH_TOKEN")
+          current_access_token = os.environ.get("CLAUDE_ACCESS_TOKEN")
+          expires_at = os.environ.get("CLAUDE_EXPIRES_AT")
+          
           if not refresh_token_value:
               raise Exception("CLAUDE_REFRESH_TOKEN not found in secrets")
+          
+          # Check if token needs refreshing
+          if not check_token_expired(expires_at):
+              print("✅ Token is still valid, no refresh needed")
+              if current_access_token and "GITHUB_OUTPUT" in os.environ:
+                  with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+                      f.write(f"access_token={current_access_token}\n")
+                      f.write(f"expires_at={expires_at}\n")
+              exit(0)
           
           print("🔄 Refreshing Claude OAuth token...")
           
@@ -76,26 +101,38 @@ jobs:
                   raise Exception("No access token in response")
               
               access_token = token_response["access_token"]
+              new_refresh_token = token_response.get("refresh_token", refresh_token_value)
+              expires_in = token_response.get("expires_in", 28800)  # Default 8 hours
+              
+              # Calculate expiration timestamp
+              import time
+              new_expires_at = str(int(time.time() + expires_in))
+              
               print("✓ Token refreshed successfully")
+              print(f"✓ Token expires in {expires_in} seconds")
               
               # Output for GitHub Actions
               if "GITHUB_OUTPUT" in os.environ:
                   with open(os.environ["GITHUB_OUTPUT"], "a") as f:
                       f.write(f"access_token={access_token}\n")
-                      if "refresh_token" in token_response:
-                          f.write(f"new_refresh_token={token_response['refresh_token']}\n")
+                      f.write(f"new_refresh_token={new_refresh_token}\n")
+                      f.write(f"expires_at={new_expires_at}\n")
               
               # Mask the token in logs
               print(f"::add-mask::{access_token}")
               
           except Exception as e:
               print(f"❌ Error: {str(e)}")
+              # Check if it's a Cloudflare error
+              if "error code: 1010" in str(e):
+                  print("⚠️  OAuth token refresh is currently not available due to endpoint restrictions.")
+                  print("⚠️  Please use API key authentication instead or provide a valid access token.")
               exit(1)
           EOF
 
-      # Update secrets using GitHub API if we have a new refresh token
+      # Update secrets using GitHub API
       - name: Update GitHub Secrets
-        if: steps.refresh_token.outputs.new_refresh_token
+        if: steps.refresh_token.outcome == 'success' && (steps.refresh_token.outputs.new_refresh_token || steps.refresh_token.outputs.expires_at)
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -108,31 +145,61 @@ jobs:
               repo: context.repo.repo,
             });
             
-            // Encrypt and update the refresh token
-            const refreshTokenValue = '${{ steps.refresh_token.outputs.new_refresh_token }}';
-            const refreshTokenBytes = Buffer.from(refreshTokenValue);
-            const keyBytes = Buffer.from(publicKey.key, 'base64');
-            const encryptedRefreshToken = Buffer.from(
-              sodium.seal(refreshTokenBytes, keyBytes)
-            ).toString('base64');
+            // Helper function to encrypt and update a secret
+            async function updateSecret(name, value) {
+              const valueBytes = Buffer.from(value);
+              const keyBytes = Buffer.from(publicKey.key, 'base64');
+              const encryptedValue = Buffer.from(
+                sodium.seal(valueBytes, keyBytes)
+              ).toString('base64');
+              
+              await github.rest.actions.createOrUpdateRepoSecret({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                secret_name: name,
+                encrypted_value: encryptedValue,
+                key_id: publicKey.key_id,
+              });
+              
+              console.log(`✓ Updated ${name} secret`);
+            }
             
-            await github.rest.actions.createOrUpdateRepoSecret({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              secret_name: 'CLAUDE_REFRESH_TOKEN',
-              encrypted_value: encryptedRefreshToken,
-              key_id: publicKey.key_id,
-            });
+            // Update access token
+            const accessToken = '${{ steps.refresh_token.outputs.access_token }}';
+            if (accessToken) {
+              await updateSecret('CLAUDE_ACCESS_TOKEN', accessToken);
+            }
             
-            console.log('✓ Updated CLAUDE_REFRESH_TOKEN secret');
+            // Update refresh token if provided
+            const refreshToken = '${{ steps.refresh_token.outputs.new_refresh_token }}';
+            if (refreshToken) {
+              await updateSecret('CLAUDE_REFRESH_TOKEN', refreshToken);
+            }
+            
+            // Update expiration timestamp
+            const expiresAt = '${{ steps.refresh_token.outputs.expires_at }}';
+            if (expiresAt) {
+              await updateSecret('CLAUDE_EXPIRES_AT', expiresAt);
+            }
 
       # Only run Claude action if this was triggered by a comment
-      - name: Run Claude Code Action
-        if: github.event_name == 'issue_comment' || github.event_name == 'pull_request_review_comment'
+      - name: Run Claude Code Action (OAuth)
+        if: (github.event_name == 'issue_comment' || github.event_name == 'pull_request_review_comment') && steps.refresh_token.outcome == 'success'
         uses: grll/claude-code-action@beta
         with:
           use_oauth: true
           claude_access_token: ${{ steps.refresh_token.outputs.access_token }}
+          claude_refresh_token: ${{ steps.refresh_token.outputs.new_refresh_token || secrets.CLAUDE_REFRESH_TOKEN }}
+          claude_expires_at: ${{ steps.refresh_token.outputs.expires_at }}
+          anthropic_model: 'claude-opus-4-20250514'
+          max_thinking_length: 20000
+      
+      # Fallback to API key if OAuth refresh failed
+      - name: Run Claude Code Action (API Key Fallback)
+        if: (github.event_name == 'issue_comment' || github.event_name == 'pull_request_review_comment') && steps.refresh_token.outcome == 'failure' && secrets.ANTHROPIC_API_KEY != ''
+        uses: grll/claude-code-action@beta
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           anthropic_model: 'claude-opus-4-20250514'
           max_thinking_length: 20000
 
