@@ -5,16 +5,16 @@ on:
     types: [created]
   pull_request_review_comment:
     types: [created]
-  workflow_dispatch:  # Allows manual triggering
+  workflow_dispatch: # Allows manual triggering
   schedule:
     # Refresh token every 6 hours to prevent expiration
-    - cron: '0 */6 * * *'
+    - cron: "0 */6 * * *"
 
 permissions:
   contents: write
   issues: write
   pull-requests: write
-  id-token: write  # Required for OIDC authentication
+  id-token: write # Required for OIDC authentication
 
 jobs:
   refresh-and-run-claude:
@@ -24,9 +24,9 @@ jobs:
       (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
       github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch'
-    
+
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -37,7 +37,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: Refresh Claude OAuth Token
         id: refresh_token
@@ -52,7 +52,7 @@ jobs:
           import json
           import urllib.request
           import urllib.error
-          
+
           def check_token_expired(expires_at):
               if not expires_at:
                   return True
@@ -61,7 +61,7 @@ jobs:
                   return time.time() >= float(expires_at) - 300  # Refresh 5 minutes before expiry
               except:
                   return True
-          
+
           def refresh_token(refresh_token):
               url = "https://console.anthropic.com/v1/oauth/token"
               data = json.dumps({
@@ -80,15 +80,15 @@ jobs:
               except urllib.error.HTTPError as e:
                   error_body = e.read().decode('utf-8')
                   raise Exception(f"HTTP {e.code}: {error_body}")
-          
+
           # Get tokens from environment
           refresh_token_value = os.environ.get("CLAUDE_REFRESH_TOKEN")
           current_access_token = os.environ.get("CLAUDE_ACCESS_TOKEN")
           expires_at = os.environ.get("CLAUDE_EXPIRES_AT")
-          
+
           if not refresh_token_value:
               raise Exception("CLAUDE_REFRESH_TOKEN not found in secrets")
-          
+
           # Check if token needs refreshing
           if not check_token_expired(expires_at):
               print("✅ Token is still valid, no refresh needed")
@@ -98,9 +98,9 @@ jobs:
                       f.write(f"expires_at={expires_at}\n")
                       f.write(f"token_refreshed=false\n")
               exit(0)
-          
+
           print("🔄 Refreshing Claude OAuth token...")
-          
+
           try:
               # Refresh the token
               token_response = refresh_token(refresh_token_value)
@@ -150,14 +150,14 @@ jobs:
         run: |
           # Install required Python packages
           pip install pynacl requests
-          
+
           # Update secrets using Python
           python - << 'EOF'
           import os
           import json
           import requests
           from nacl import encoding, public
-          
+
           # Setup
           token = os.environ['GITHUB_TOKEN']
           repo = os.environ['GITHUB_REPOSITORY']
@@ -165,7 +165,7 @@ jobs:
               'Authorization': f'token {token}',
               'Accept': 'application/vnd.github.v3+json'
           }
-          
+
           try:
               # Get public key for encrypting secrets
               key_response = requests.get(
@@ -231,15 +231,15 @@ jobs:
           claude_access_token: ${{ steps.refresh_token.outputs.access_token }}
           claude_refresh_token: ${{ steps.refresh_token.outputs.new_refresh_token || secrets.CLAUDE_REFRESH_TOKEN }}
           claude_expires_at: ${{ steps.refresh_token.outputs.expires_at }}
-          anthropic_model: 'claude-opus-4-20250514'
-      
+          anthropic_model: "claude-opus-4-20250514"
+
       # Fallback to API key if OAuth refresh failed
       - name: Run Claude Code Action (API Key Fallback)
         if: (github.event_name == 'issue_comment' || github.event_name == 'pull_request_review_comment') && steps.refresh_token.outcome == 'failure'
         uses: nimishchaudhari/claude-code-action-max-sub@main
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          anthropic_model: 'claude-opus-4-20250514'
+          anthropic_model: "claude-opus-4-20250514"
 
       # Log success for scheduled runs
       - name: Log Scheduled Refresh Success

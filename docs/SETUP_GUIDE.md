@@ -13,11 +13,13 @@ This solution automatically refreshes your Claude OAuth token before running the
 ### Step 1: Get Your Initial Tokens
 
 1. Authenticate with Claude CLI locally:
+
    ```bash
    claude auth --method oauth
    ```
 
 2. Find your refresh token in the credentials file:
+
    - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
    - **Linux**: `~/.config/Claude/claude_desktop_config.json`
    - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
@@ -36,6 +38,7 @@ Add the following secrets to your GitHub repository:
 ### Step 3: Add the Workflow
 
 1. Create the directory structure in your repository:
+
    ```
    .github/
    └── workflows/
@@ -94,7 +97,7 @@ jobs:
   claude-code-action:
     if: contains(github.event.comment.body, '@claude')
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -102,7 +105,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: Install dependencies
         run: pip install requests
@@ -112,11 +115,11 @@ jobs:
         env:
           CLAUDE_REFRESH_TOKEN: ${{ secrets.CLAUDE_REFRESH_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          UPDATE_GITHUB_SECRET: 'true'
+          UPDATE_GITHUB_SECRET: "true"
         run: |
           # Download the refresh token script
           curl -o refresh-token.py https://raw.githubusercontent.com/${{ github.repository }}/main/scripts/refresh-token.py
-          
+
           # Make it executable and run it
           chmod +x refresh-token.py
           python refresh-token.py

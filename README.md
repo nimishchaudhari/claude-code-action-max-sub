@@ -9,10 +9,12 @@ This repository provides solutions to automatically refresh Claude OAuth tokens 
 This option refreshes the token on each run without updating GitHub secrets.
 
 1. **Add your refresh token to GitHub Secrets:**
+
    - Go to Settings → Secrets and variables → Actions
    - Add `CLAUDE_REFRESH_TOKEN` with your refresh token value
 
 2. **Create `.github/workflows/claude-assistant.yml`:**
+
    ```yaml
    name: Claude Code Assistant (Simple Token Refresh)
 
@@ -31,7 +33,7 @@ This option refreshes the token on each run without updating GitHub secrets.
      claude-with-refresh:
        if: contains(github.event.comment.body, '@claude')
        runs-on: ubuntu-latest
-       
+
        steps:
          - name: Refresh Token and Run Claude
            env:
@@ -40,22 +42,22 @@ This option refreshes the token on each run without updating GitHub secrets.
              # Inline Python script to refresh token
              ACCESS_TOKEN=$(python3 -c "
              import json, urllib.request, os, sys
-             
+
              refresh_token = os.environ.get('CLAUDE_REFRESH_TOKEN')
              if not refresh_token:
                  print('Error: CLAUDE_REFRESH_TOKEN not set', file=sys.stderr)
                  sys.exit(1)
-             
+
              # Prepare request
              url = 'https://console.anthropic.com/v1/oauth/token'
              data = json.dumps({
                  'grant_type': 'refresh_token',
                  'refresh_token': refresh_token
              }).encode('utf-8')
-             
+
              req = urllib.request.Request(url, data=data)
              req.add_header('Content-Type', 'application/json')
-             
+
              try:
                  with urllib.request.urlopen(req) as response:
                      result = json.loads(response.read().decode('utf-8'))
@@ -64,12 +66,12 @@ This option refreshes the token on each run without updating GitHub secrets.
                  print(f'Error refreshing token: {e}', file=sys.stderr)
                  sys.exit(1)
              ")
-             
+
              if [ -z "$ACCESS_TOKEN" ]; then
                echo "Failed to refresh token"
                exit 1
              fi
-             
+
              echo "::add-mask::$ACCESS_TOKEN"
              echo "CLAUDE_ACCESS_TOKEN=$ACCESS_TOKEN" >> $GITHUB_ENV
 
@@ -87,6 +89,7 @@ This option refreshes the token on each run without updating GitHub secrets.
 This option includes scheduled refreshes and automatically updates GitHub secrets when new refresh tokens are issued.
 
 Use the `claude-auto-refresh-action.yml` file which includes:
+
 - Automatic token refresh before each Claude run
 - Scheduled refresh every 6 hours
 - Automatic secret updates when new refresh tokens are issued
@@ -95,18 +98,21 @@ Use the `claude-auto-refresh-action.yml` file which includes:
 ### Option 3: Custom Implementation
 
 For custom implementations, use the provided scripts:
+
 - **Node.js**: `refresh-token.js`
 - **Python**: `refresh-token.py`
 
 ## Getting Your Refresh Token
 
 1. Install Claude CLI and authenticate:
+
    ```bash
    npm install -g @anthropic-ai/claude-cli
    claude auth --method oauth
    ```
 
 2. Find your refresh token:
+
    - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
    - **Linux**: `~/.config/Claude/claude_desktop_config.json`
    - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
@@ -133,45 +139,48 @@ For custom implementations, use the provided scripts:
 
 ## Comparison of Options
 
-| Feature | Simple Refresh | Auto-Update | Custom Scripts |
-|---------|---------------|-------------|----------------|
-| Ease of setup | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐ |
-| Token always fresh | ✅ | ✅ | ✅ |
-| Scheduled refresh | ❌ | ✅ | Configurable |
-| Auto-update secrets | ❌ | ✅ | Configurable |
-| External dependencies | None | None | Node.js/Python |
-| Best for | Most users | Power users | Custom workflows |
+| Feature               | Simple Refresh | Auto-Update | Custom Scripts   |
+| --------------------- | -------------- | ----------- | ---------------- |
+| Ease of setup         | ⭐⭐⭐⭐⭐     | ⭐⭐⭐      | ⭐⭐             |
+| Token always fresh    | ✅             | ✅          | ✅               |
+| Scheduled refresh     | ❌             | ✅          | Configurable     |
+| Auto-update secrets   | ❌             | ✅          | Configurable     |
+| External dependencies | None           | None        | Node.js/Python   |
+| Best for              | Most users     | Power users | Custom workflows |
 
 ## Alternative: API Key Authentication
 
 If OAuth token refresh is not working due to endpoint restrictions, use API key authentication:
 
 1. **Get an API Key**:
+
    - Go to [console.anthropic.com](https://console.anthropic.com)
    - Navigate to API Keys section
    - Create a new API key
 
 2. **Add to GitHub Secrets**:
+
    - Add `ANTHROPIC_API_KEY` to your repository secrets
 
 3. **Use the API Key Workflow**:
+
    ```yaml
    name: Claude Code Assistant (API Key)
-   
+
    on:
      issue_comment:
        types: [created]
-   
+
    permissions:
      contents: write
      issues: write
      pull-requests: write
-   
+
    jobs:
      claude:
        if: contains(github.event.comment.body, '@claude')
        runs-on: ubuntu-latest
-       
+
        steps:
          - name: Run Claude Code Action
            uses: nimishchaudhari/claude-code-action-max-sub@main
@@ -184,20 +193,23 @@ If OAuth token refresh is not working due to endpoint restrictions, use API key 
 ### Common Issues
 
 1. **"OAuth token has expired"**
+
    - Ensure `CLAUDE_REFRESH_TOKEN` is set correctly
    - Check if the refresh token itself has expired (rare)
    - Consider using API key authentication as an alternative
 
 2. **"Failed to refresh token" or "HTTP 403: error code: 1010"**
+
    - This is a Cloudflare protection error on the OAuth endpoint
    - **Solution**: Use API key authentication instead of OAuth
    - Add `ANTHROPIC_API_KEY` to your secrets and use the API key workflow
 
 3. **"Error refreshing token"**
+
    - The OAuth refresh endpoint may be temporarily unavailable
    - Fallback to API key authentication is recommended
 
-3. **Claude doesn't respond**
+4. **Claude doesn't respond**
    - Ensure comment contains `@claude`
    - Check workflow permissions are set correctly
 
@@ -218,6 +230,7 @@ If OAuth token refresh is not working due to endpoint restrictions, use API key 
 ## Contributing
 
 Found an issue or have an improvement? Please:
+
 1. Open an issue at [grll/claude-code-action](https://github.com/grll/claude-code-action/issues)
 2. Submit a PR with your improvements
 
