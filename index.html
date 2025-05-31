@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Logarithmic Graph of Pi's First 100 Decimals</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Logarithmic Graph of Pi's First 100 Decimals</h1>
+            <p class="subtitle">Interactive visualization of log₁₀(digit + 1) for each decimal position</p>
+        </header>
+
+        <main>
+            <div class="pi-display">
+                <h2>π = 3.<span id="pi-decimals">Loading...</span></h2>
+            </div>
+
+            <div class="chart-container">
+                <canvas id="piChart"></canvas>
+            </div>
+
+            <div class="controls">
+                <label for="rangeSlider">Display Range (1-100):</label>
+                <input type="range" id="rangeSlider" min="1" max="100" value="100" step="1">
+                <span id="rangeValue">100</span> digits
+            </div>
+
+            <div class="statistics">
+                <h3>Digit Distribution Statistics</h3>
+                <div id="stats-grid" class="stats-grid">
+                    <!-- Statistics will be populated by JavaScript -->
+                </div>
+            </div>
+
+            <div class="info">
+                <h3>About This Visualization</h3>
+                <p>This chart displays the logarithmic values of the first 100 decimal digits of π (pi). Each bar represents log₁₀(digit + 1) where we add 1 to avoid log(0). The height of each bar corresponds to the logarithmic value, while the color represents the actual digit value (0-9).</p>
+                
+                <div class="legend">
+                    <h4>Color Legend</h4>
+                    <div class="legend-grid">
+                        <div class="legend-item"><span class="color-box" style="background: #440154"></span>Digit 0</div>
+                        <div class="legend-item"><span class="color-box" style="background: #481668"></span>Digit 1</div>
+                        <div class="legend-item"><span class="color-box" style="background: #472d7b"></span>Digit 2</div>
+                        <div class="legend-item"><span class="color-box" style="background: #3e4989"></span>Digit 3</div>
+                        <div class="legend-item"><span class="color-box" style="background: #31688e"></span>Digit 4</div>
+                        <div class="legend-item"><span class="color-box" style="background: #26828e"></span>Digit 5</div>
+                        <div class="legend-item"><span class="color-box" style="background: #1f9e89"></span>Digit 6</div>
+                        <div class="legend-item"><span class="color-box" style="background: #35b779"></span>Digit 7</div>
+                        <div class="legend-item"><span class="color-box" style="background: #6ece58"></span>Digit 8</div>
+                        <div class="legend-item"><span class="color-box" style="background: #b5de2b"></span>Digit 9</div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>Generated with <a href="https://claude.ai/code" target="_blank">Claude Code</a></p>
+        </footer>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
