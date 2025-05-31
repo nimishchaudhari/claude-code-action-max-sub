@@ -89,6 +89,7 @@ jobs:
                   with open(os.environ["GITHUB_OUTPUT"], "a") as f:
                       f.write(f"access_token={current_access_token}\n")
                       f.write(f"expires_at={expires_at}\n")
+                      f.write(f"token_refreshed=false\n")
               exit(0)
           
           print("🔄 Refreshing Claude OAuth token...")
@@ -117,6 +118,7 @@ jobs:
                       f.write(f"access_token={access_token}\n")
                       f.write(f"new_refresh_token={new_refresh_token}\n")
                       f.write(f"expires_at={new_expires_at}\n")
+                      f.write(f"token_refreshed=true\n")
               
               # Mask the token in logs
               print(f"::add-mask::{access_token}")
@@ -130,57 +132,88 @@ jobs:
               exit(1)
           EOF
 
-      # Update secrets using GitHub API
+      # Update secrets using Python and pynacl
       - name: Update GitHub Secrets
-        if: steps.refresh_token.outcome == 'success' && (steps.refresh_token.outputs.new_refresh_token || steps.refresh_token.outputs.expires_at)
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const sodium = require('tweetsodium');
-            
-            // Get the public key for encrypting secrets
-            const { data: publicKey } = await github.rest.actions.getRepoPublicKey({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-            });
-            
-            // Helper function to encrypt and update a secret
-            async function updateSecret(name, value) {
-              const valueBytes = Buffer.from(value);
-              const keyBytes = Buffer.from(publicKey.key, 'base64');
-              const encryptedValue = Buffer.from(
-                sodium.seal(valueBytes, keyBytes)
-              ).toString('base64');
+        if: steps.refresh_token.outcome == 'success' && steps.refresh_token.outputs.token_refreshed == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACCESS_TOKEN: ${{ steps.refresh_token.outputs.access_token }}
+          REFRESH_TOKEN: ${{ steps.refresh_token.outputs.new_refresh_token }}
+          EXPIRES_AT: ${{ steps.refresh_token.outputs.expires_at }}
+        run: |
+          # Install required Python packages
+          pip install pynacl requests
+          
+          # Update secrets using Python
+          python - << 'EOF'
+          import os
+          import json
+          import requests
+          from nacl import encoding, public
+          
+          # Setup
+          token = os.environ['GITHUB_TOKEN']
+          repo = os.environ['GITHUB_REPOSITORY']
+          headers = {
+              'Authorization': f'token {token}',
+              'Accept': 'application/vnd.github.v3+json'
+          }
+          
+          try:
+              # Get public key for encrypting secrets
+              key_response = requests.get(
+                  f'https://api.github.com/repos/{repo}/actions/secrets/public-key',
+                  headers=headers
+              )
+              key_response.raise_for_status()
+              key_data = key_response.json()
               
-              await github.rest.actions.createOrUpdateRepoSecret({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                secret_name: name,
-                encrypted_value: encryptedValue,
-                key_id: publicKey.key_id,
-              });
+              # Encrypt and update a secret
+              def update_secret(name, value):
+                  if not value or value == 'undefined':
+                      return
+                      
+                  # Encrypt the value
+                  public_key = public.PublicKey(
+                      key_data['key'].encode("utf-8"), 
+                      encoding.Base64Encoder()
+                  )
+                  sealed_box = public.SealedBox(public_key)
+                  encrypted = sealed_box.encrypt(value.encode("utf-8"))
+                  encrypted_value = encoding.Base64Encoder().encode(encrypted).decode("utf-8")
+                  
+                  # Update the secret
+                  response = requests.put(
+                      f'https://api.github.com/repos/{repo}/actions/secrets/{name}',
+                      headers=headers,
+                      json={
+                          'encrypted_value': encrypted_value,
+                          'key_id': key_data['key_id']
+                      }
+                  )
+                  
+                  if response.status_code in [201, 204]:
+                      print(f'✓ Updated {name}')
+                  else:
+                      print(f'Failed to update {name}: {response.status_code} - {response.text}')
+                      raise Exception(f'Failed to update {name}')
               
-              console.log(`✓ Updated ${name} secret`);
-            }
-            
-            // Update access token
-            const accessToken = '${{ steps.refresh_token.outputs.access_token }}';
-            if (accessToken) {
-              await updateSecret('CLAUDE_ACCESS_TOKEN', accessToken);
-            }
-            
-            // Update refresh token if provided
-            const refreshToken = '${{ steps.refresh_token.outputs.new_refresh_token }}';
-            if (refreshToken) {
-              await updateSecret('CLAUDE_REFRESH_TOKEN', refreshToken);
-            }
-            
-            // Update expiration timestamp
-            const expiresAt = '${{ steps.refresh_token.outputs.expires_at }}';
-            if (expiresAt) {
-              await updateSecret('CLAUDE_EXPIRES_AT', expiresAt);
-            }
+              # Update all three secrets
+              if os.environ.get('ACCESS_TOKEN'):
+                  update_secret('CLAUDE_ACCESS_TOKEN', os.environ['ACCESS_TOKEN'])
+              if os.environ.get('REFRESH_TOKEN'):
+                  update_secret('CLAUDE_REFRESH_TOKEN', os.environ['REFRESH_TOKEN'])
+              if os.environ.get('EXPIRES_AT'):
+                  update_secret('CLAUDE_EXPIRES_AT', os.environ['EXPIRES_AT'])
+                  
+              print('✅ All secrets updated successfully')
+              
+          except Exception as e:
+              print(f'❌ Error updating secrets: {str(e)}')
+              import traceback
+              traceback.print_exc()
+              exit(1)
+          EOF
 
       # Only run Claude action if this was triggered by a comment
       - name: Run Claude Code Action (OAuth)

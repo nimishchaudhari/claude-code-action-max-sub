@@ -117,12 +117,19 @@ For custom implementations, use the provided scripts:
 
 1. **Token Expiration Problem**: Claude OAuth access tokens expire after ~8-24 hours
 2. **Solution**: Use the refresh token to get a new access token before each Claude action
-3. **API Endpoint**: `POST https://console.anthropic.com/v1/oauth/token` (⚠️ **Note**: This endpoint may be blocked by Cloudflare)
-4. **Payload**: `{ "grant_type": "refresh_token", "refresh_token": "YOUR_REFRESH_TOKEN" }`
+3. **API Endpoint**: `POST https://console.anthropic.com/v1/oauth/token`
+4. **Required Parameters**:
+   - `grant_type`: "refresh_token"
+   - `refresh_token`: Your refresh token
+   - `client_id`: "9d1c250a-e61b-44d9-88ed-5944d1962f5e" (hardcoded)
+5. **Token Management**: The workflow tracks token expiration using `CLAUDE_EXPIRES_AT` and only refreshes when needed
 
-### ⚠️ Important OAuth Limitation
+### OAuth Implementation Details
 
-The OAuth token refresh endpoint is currently protected by Cloudflare and may return a 403 error (code 1010). If you encounter this issue, please use API key authentication instead.
+- **Expiration Check**: Tokens are refreshed 5 minutes before expiration
+- **Secret Updates**: All three secrets (ACCESS_TOKEN, REFRESH_TOKEN, EXPIRES_AT) are automatically updated
+- **Encryption**: Uses PyNaCl library for GitHub secret encryption
+- **Fallback**: If OAuth fails, the workflow can fall back to API key authentication
 
 ## Comparison of Options
 
