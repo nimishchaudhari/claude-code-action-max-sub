@@ -218,7 +218,7 @@ jobs:
       # Only run Claude action if this was triggered by a comment
       - name: Run Claude Code Action (OAuth)
         if: (github.event_name == 'issue_comment' || github.event_name == 'pull_request_review_comment') && steps.refresh_token.outcome == 'success'
-        uses: grll/claude-code-action@beta
+        uses: com/nimishchaudhari/claude-code-action-max-sub@main
         with:
           use_oauth: true
           claude_access_token: ${{ steps.refresh_token.outputs.access_token }}
@@ -230,7 +230,7 @@ jobs:
       # Fallback to API key if OAuth refresh failed
       - name: Run Claude Code Action (API Key Fallback)
         if: (github.event_name == 'issue_comment' || github.event_name == 'pull_request_review_comment') && steps.refresh_token.outcome == 'failure'
-        uses: grll/claude-code-action@beta
+        uses: com/nimishchaudhari/claude-code-action-max-sub@main
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           anthropic_model: 'claude-opus-4-20250514'
