@@ -196,7 +196,7 @@ jobs:
       
       # Fallback to API key if OAuth refresh failed
       - name: Run Claude Code Action (API Key Fallback)
-        if: (github.event_name == 'issue_comment' || github.event_name == 'pull_request_review_comment') && steps.refresh_token.outcome == 'failure' && secrets.ANTHROPIC_API_KEY != ''
+        if: (github.event_name == 'issue_comment' || github.event_name == 'pull_request_review_comment') && steps.refresh_token.outcome == 'failure'
         uses: grll/claude-code-action@beta
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
