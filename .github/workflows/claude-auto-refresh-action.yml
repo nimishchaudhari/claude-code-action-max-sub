@@ -15,7 +15,7 @@ permissions:
   issues: write
   pull-requests: write
   id-token: write # Required for OIDC authentication
-
+  actions: write
 jobs:
   refresh-and-run-claude:
     # Only run if comment contains @claude or if it's a scheduled/manual run
