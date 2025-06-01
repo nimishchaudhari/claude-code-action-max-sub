@@ -86,6 +86,7 @@ For OAuth authentication, ensure these secrets are configured:
 - `CLAUDE_REFRESH_TOKEN` - Your Claude OAuth refresh token
 - `CLAUDE_ACCESS_TOKEN` - Current access token (auto-updated)
 - `CLAUDE_EXPIRES_AT` - Token expiration timestamp (auto-updated)
+- `PAT_TOKEN` - (Optional) Personal Access Token with 'repo' scope for automatic secret updates via refresh workflow
 
 ## Debugging Permission Issues
 
@@ -141,6 +142,29 @@ jobs:
 - Uses `use_oauth: true` parameter
 - Needs `id-token: write` permission for OIDC
 
+#### Manual Token Refresh Workflow
+
+The repository includes a [`refresh-oauth-token.yml`](.github/workflows/refresh-oauth-token.yml) workflow for manually refreshing OAuth tokens when needed.
+
+**Prerequisites:**
+- `CLAUDE_REFRESH_TOKEN` secret must be set with a valid refresh token
+
+**Optional but Recommended:**
+- `PAT_TOKEN` secret: Personal Access Token with 'repo' scope for updating secrets
+- Without this, the workflow will refresh tokens but cannot update repository secrets automatically
+
+**Usage:**
+1. Go to **Actions** tab in your repository
+2. Select **"Refresh OAuth Token"** workflow
+3. Click **"Run workflow"**
+4. Choose whether to update secrets (requires PAT_TOKEN)
+
+**Setting up PAT_TOKEN:**
+1. Go to GitHub **Settings** → **Developer settings** → **Personal access tokens** → **Fine-grained tokens**
+2. Create a new token with 'repo' scope for your repository
+3. Add the token as a repository secret named `PAT_TOKEN`
+4. This allows the refresh workflow to automatically update `CLAUDE_ACCESS_TOKEN` and `CLAUDE_EXPIRES_AT` secrets
+
 ### API Key Authentication (Fallback)
 
 - Uses Anthropic API key directly
@@ -161,8 +185,9 @@ If you continue experiencing permission issues:
 
 1. Check the [main setup guide](SETUP_GUIDE.md)
 2. Review the [working workflow example](.github/workflows/claude-auto-refresh-action.yml)
-3. Open an issue with your specific error message
-4. Include relevant workflow logs (redact any sensitive information)
+3. Use the [manual token refresh workflow](.github/workflows/refresh-oauth-token.yml) if tokens need refreshing
+4. Open an issue with your specific error message
+5. Include relevant workflow logs (redact any sensitive information)
 
 ## Success Indicators
 
