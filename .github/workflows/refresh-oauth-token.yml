@@ -15,7 +15,6 @@ jobs:
     permissions:
       contents: read
       actions: write
-      secrets: write
     
     steps:
       - name: Checkout repository
@@ -32,6 +31,7 @@ jobs:
           UPDATE_GITHUB_SECRET: ${{ inputs.update_secrets }}
           GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           node scripts/refresh-token.js
       
