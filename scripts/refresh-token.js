@@ -11,6 +11,7 @@ async function refreshToken(refreshToken) {
     const data = JSON.stringify({
       grant_type: "refresh_token",
       refresh_token: refreshToken,
+      client_id: "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
     });
 
     const options = {
@@ -117,16 +118,47 @@ async function main() {
       }
     }
 
-    // Output the new token for the current workflow
-    console.log(
-      `::set-output name=access_token::${tokenResponse.access_token}`,
-    );
+    // Calculate expiration timestamp
+    const expiresIn = tokenResponse.expires_in || 28800; // Default 8 hours
+    const expiresAt = Math.floor(Date.now() / 1000) + expiresIn;
+    
+    console.log(`✓ Token expires in ${expiresIn} seconds`);
 
-    // Also set it as an environment variable for subsequent steps
+    // Output for GitHub Actions (new format)
+    if (process.env.GITHUB_OUTPUT) {
+      const fs = require("fs");
+      fs.appendFileSync(
+        process.env.GITHUB_OUTPUT,
+        `access_token=${tokenResponse.access_token}\n` +
+        `refresh_token=${tokenResponse.refresh_token || refreshTokenValue}\n` +
+        `expires_at=${expiresAt}\n`
+      );
+    } else {
+      // Legacy output format
+      console.log(
+        `::set-output name=access_token::${tokenResponse.access_token}`,
+      );
+      console.log(
+        `::set-output name=refresh_token::${tokenResponse.refresh_token || refreshTokenValue}`,
+      );
+      console.log(
+        `::set-output name=expires_at::${expiresAt}`,
+      );
+    }
+
+    // Mask the token in logs
     console.log(`::add-mask::${tokenResponse.access_token}`);
-    console.log(
-      `CLAUDE_ACCESS_TOKEN=${tokenResponse.access_token} >> $GITHUB_ENV`,
-    );
+    
+    // Set environment variables for subsequent steps
+    if (process.env.GITHUB_ENV) {
+      const fs = require("fs");
+      fs.appendFileSync(
+        process.env.GITHUB_ENV,
+        `CLAUDE_ACCESS_TOKEN=${tokenResponse.access_token}\n` +
+        `CLAUDE_REFRESH_TOKEN=${tokenResponse.refresh_token || refreshTokenValue}\n` +
+        `CLAUDE_EXPIRES_AT=${expiresAt}\n`
+      );
+    }
   } catch (error) {
     console.error("❌ Error:", error.message);
     process.exit(1);
