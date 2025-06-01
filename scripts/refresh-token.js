@@ -68,7 +68,13 @@ function updateGitHubSecret(secretName, secretValue, owner, repo) {
       },
     );
     console.log(`✓ Updated GitHub secret: ${secretName}`);
+    return true;
   } catch (error) {
+    // Check if it's a permission error
+    if (error.message.includes("403") || error.message.includes("not accessible")) {
+      console.warn(`⚠️  Cannot update ${secretName}: Insufficient permissions. This requires a Personal Access Token with admin rights.`);
+      return false;
+    }
     throw new Error(`Failed to update GitHub secret: ${error.message}`);
   }
 }
@@ -99,8 +105,10 @@ async function main() {
     if (process.env.UPDATE_GITHUB_SECRET === "true") {
       console.log("📝 Updating GitHub secrets...");
 
+      let secretsUpdated = true;
+
       // Update access token
-      updateGitHubSecret(
+      const accessTokenUpdated = updateGitHubSecret(
         "CLAUDE_ACCESS_TOKEN",
         tokenResponse.access_token,
         owner,
@@ -109,12 +117,21 @@ async function main() {
 
       // Update refresh token if a new one was provided
       if (tokenResponse.refresh_token) {
-        updateGitHubSecret(
+        const refreshTokenUpdated = updateGitHubSecret(
           "CLAUDE_REFRESH_TOKEN",
           tokenResponse.refresh_token,
           owner,
           repo,
         );
+        secretsUpdated = accessTokenUpdated && refreshTokenUpdated;
+      } else {
+        secretsUpdated = accessTokenUpdated;
+      }
+
+      if (!secretsUpdated) {
+        console.log("\n⚠️  Secrets were not updated due to insufficient permissions.");
+        console.log("💡 To update secrets automatically, use a Personal Access Token with repo permissions.");
+        console.log("   Add it as a secret named 'PAT_TOKEN' and update the workflow to use it.\n");
       }
     }
 

@@ -1,10 +1,27 @@
+# Refresh OAuth Token Workflow
+#
+# This workflow manually refreshes Claude OAuth tokens when triggered.
+#
+# Prerequisites:
+# - CLAUDE_REFRESH_TOKEN secret must be set with a valid refresh token
+#
+# Optional:
+# - PAT_TOKEN secret: Personal Access Token with 'repo' scope for updating secrets
+#   Without this, the workflow will refresh tokens but cannot update repository secrets
+#
+# Usage:
+# 1. Go to Actions tab
+# 2. Select "Refresh OAuth Token" workflow
+# 3. Click "Run workflow"
+# 4. Choose whether to update secrets (requires PAT_TOKEN)
+
 name: Refresh OAuth Token
 
 on:
   workflow_dispatch:
     inputs:
       update_secrets:
-        description: 'Update GitHub secrets with new tokens'
+        description: 'Update GitHub secrets with new tokens (requires PAT_TOKEN secret)'
         required: false
         default: true
         type: boolean
@@ -26,17 +43,30 @@ jobs:
           node-version: '20'
       
       - name: Refresh OAuth Token
+        id: refresh
         env:
           CLAUDE_REFRESH_TOKEN: ${{ secrets.CLAUDE_REFRESH_TOKEN }}
           UPDATE_GITHUB_SECRET: ${{ inputs.update_secrets }}
           GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Use PAT_TOKEN if available for updating secrets, otherwise use GITHUB_TOKEN
+          GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
+          echo "🔐 Using $([ -n "${{ secrets.PAT_TOKEN }}" ] && echo "Personal Access Token" || echo "GitHub Token")"
           node scripts/refresh-token.js
       
-      - name: Verify token refresh
+      - name: Display results
         if: success()
         run: |
           echo "✅ OAuth token refreshed successfully"
           echo "Token refresh completed at: $(date)"
+          echo ""
+          echo "📋 Token Information:"
+          echo "- Access Token: ${{ steps.refresh.outputs.access_token && '***' || 'Not available' }}"
+          echo "- Refresh Token: ${{ steps.refresh.outputs.refresh_token && '***' || 'Not changed' }}"
+          echo "- Expires At: ${{ steps.refresh.outputs.expires_at || 'Not available' }}"
+          echo ""
+          if [ "${{ inputs.update_secrets }}" = "true" ] && [ -z "${{ secrets.PAT_TOKEN }}" ]; then
+            echo "⚠️  Note: To automatically update secrets, add a Personal Access Token as 'PAT_TOKEN' secret"
+            echo "   The PAT needs 'repo' scope to update secrets"
+          fi
