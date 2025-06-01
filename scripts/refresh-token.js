@@ -75,18 +75,18 @@ function updateGitHubSecret(secretName, secretValue, owner, repo) {
 async function main() {
   try {
     // Get environment variables
-    const refreshToken = process.env.CLAUDE_REFRESH_TOKEN;
+    const refreshTokenValue = process.env.CLAUDE_REFRESH_TOKEN;
     const owner = process.env.GITHUB_REPOSITORY_OWNER;
     const repo = process.env.GITHUB_REPOSITORY.split("/")[1];
 
-    if (!refreshToken) {
+    if (!refreshTokenValue) {
       throw new Error("CLAUDE_REFRESH_TOKEN environment variable is required");
     }
 
     console.log("🔄 Refreshing Claude OAuth token...");
 
     // Refresh the token
-    const tokenResponse = await refreshToken(refreshToken);
+    const tokenResponse = await refreshToken(refreshTokenValue);
 
     if (!tokenResponse.access_token) {
       throw new Error("No access token in response");
