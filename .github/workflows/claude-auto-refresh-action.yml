@@ -1,4 +1,4 @@
-name: Claude Code Assistant with Auto Token Refresh
+name: Claude Code Assistant with Enhanced Token Fallback
 
 on:
   issue_comment:
@@ -16,8 +16,9 @@ permissions:
   pull-requests: write
   id-token: write # Required for OIDC authentication
   actions: write
+
 jobs:
-  refresh-and-run-claude:
+  claude-with-fallback:
     # Only run if comment contains @claude or if it's a scheduled/manual run
     if: |
       (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
@@ -34,202 +35,61 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          python-version: "3.11"
+          node-version: '20'
 
-      - name: Refresh Claude OAuth Token
+      # Step 1: Try Claude Code with existing credentials
+      - name: Run Claude Code Action (Primary OAuth)
+        id: claude_primary
+        if: github.event_name == 'issue_comment' || github.event_name == 'pull_request_review_comment'
+        continue-on-error: true
+        uses: nimishchaudhari/claude-code-action-max-sub@main
+        with:
+          use_oauth: true
+          claude_access_token: ${{ secrets.CLAUDE_ACCESS_TOKEN }}
+          claude_refresh_token: ${{ secrets.CLAUDE_REFRESH_TOKEN }}
+          claude_expires_at: ${{ secrets.CLAUDE_EXPIRES_AT }}
+          allowed_tools: 'Task,Bash,Glob,Grep,LS,Read,Edit,MultiEdit,Write,NotebookRead,NotebookEdit,TodoRead,TodoWrite,mcp__github_file_ops__commit_files,mcp__github_file_ops__delete_files,mcp__github__add_issue_comment,mcp__github__add_pull_request_review_comment,mcp__github__create_branch,mcp__github__create_issue,mcp__github__create_or_update_file,mcp__github__create_pull_request,mcp__github__create_pull_request_review,mcp__github__create_repository,mcp__github__delete_file,mcp__github__fork_repository,mcp__github__get_code_scanning_alert,mcp__github__get_commit,mcp__github__get_file_contents,mcp__github__get_issue,mcp__github__get_issue_comments,mcp__github__get_me,mcp__github__get_pull_request,mcp__github__get_pull_request_comments,mcp__github__get_pull_request_files,mcp__github__get_pull_request_reviews,mcp__github__get_pull_request_status,mcp__github__get_secret_scanning_alert,mcp__github__get_tag,mcp__github__list_branches,mcp__github__list_code_scanning_alerts,mcp__github__list_commits,mcp__github__list_issues,mcp__github__list_pull_requests,mcp__github__list_secret_scanning_alerts,mcp__github__list_tags,mcp__github__merge_pull_request,mcp__github__push_files,mcp__github__search_code,mcp__github__search_issues,mcp__github__search_repositories,mcp__github__search_users,mcp__github__update_issue,mcp__github__update_issue_comment,mcp__github__update_pull_request,mcp__github__update_pull_request_branch,mcp__github__update_pull_request_comment'
+          custom_instructions: "You have also been granted tools for editing files and running bun commands (install, run, test, typecheck) for testing your changes: bun install, bun test, bun run format, bun typecheck."          
+          timeout_minutes: "60"
+          assignee_trigger: '@claude'
+          model: 'claude-sonnet-4-20250514'
+
+      # Step 3a: If primary failed (expired credentials), refresh tokens using proven script
+      - name: Refresh OAuth Token (Fallback)
         id: refresh_token
+        if: |
+          (github.event_name == 'issue_comment' || github.event_name == 'pull_request_review_comment') && 
+          steps.claude_primary.outcome == 'failure'
         continue-on-error: true
         env:
-          CLAUDE_ACCESS_TOKEN: ${{ secrets.CLAUDE_ACCESS_TOKEN }}
           CLAUDE_REFRESH_TOKEN: ${{ secrets.CLAUDE_REFRESH_TOKEN }}
-          CLAUDE_EXPIRES_AT: ${{ secrets.CLAUDE_EXPIRES_AT }}
+          UPDATE_GITHUB_SECRET: true
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
-          python - << 'EOF'
-          import os
-          import json
-          import urllib.request
-          import urllib.error
+          echo "🔄 Primary OAuth attempt failed, refreshing tokens..."
+          echo "🔐 Using $([ -n "${{ secrets.PAT_TOKEN }}" ] && echo "Personal Access Token" || echo "GitHub Token")"
+          
+          # Use the proven working Node.js script
+          node scripts/refresh-token.js
 
-          def check_token_expired(expires_at):
-              if not expires_at:
-                  return True
-              try:
-                  import time
-                  return time.time() >= float(expires_at) - 300  # Refresh 5 minutes before expiry
-              except:
-                  return True
-
-          def refresh_token(refresh_token):
-              url = "https://console.anthropic.com/v1/oauth/token"
-              data = json.dumps({
-                  "grant_type": "refresh_token",
-                  "refresh_token": refresh_token,
-                  "client_id": "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
-              }).encode('utf-8')
-              
-              req = urllib.request.Request(url, data=data)
-              req.add_header('Content-Type', 'application/json')
-              
-              try:
-                  with urllib.request.urlopen(req) as response:
-                      result = json.loads(response.read().decode('utf-8'))
-                      return result
-              except urllib.error.HTTPError as e:
-                  error_body = e.read().decode('utf-8')
-                  raise Exception(f"HTTP {e.code}: {error_body}")
-
-          # Get tokens from environment
-          refresh_token_value = os.environ.get("CLAUDE_REFRESH_TOKEN")
-          current_access_token = os.environ.get("CLAUDE_ACCESS_TOKEN")
-          expires_at = os.environ.get("CLAUDE_EXPIRES_AT")
-
-          if not refresh_token_value:
-              raise Exception("CLAUDE_REFRESH_TOKEN not found in secrets")
-
-          # Check if token needs refreshing
-          if not check_token_expired(expires_at):
-              print("✅ Token is still valid, no refresh needed")
-              if current_access_token and "GITHUB_OUTPUT" in os.environ:
-                  with open(os.environ["GITHUB_OUTPUT"], "a") as f:
-                      f.write(f"access_token={current_access_token}\n")
-                      f.write(f"expires_at={expires_at}\n")
-                      f.write(f"token_refreshed=false\n")
-              exit(0)
-
-          print("🔄 Refreshing Claude OAuth token...")
-
-          try:
-              # Refresh the token
-              token_response = refresh_token(refresh_token_value)
-              
-              if "access_token" not in token_response:
-                  raise Exception("No access token in response")
-              
-              access_token = token_response["access_token"]
-              new_refresh_token = token_response.get("refresh_token", refresh_token_value)
-              expires_in = token_response.get("expires_in", 28800)  # Default 8 hours
-              
-              # Calculate expiration timestamp
-              import time
-              new_expires_at = str(int(time.time() + expires_in))
-              
-              print("✓ Token refreshed successfully")
-              print(f"✓ Token expires in {expires_in} seconds")
-              
-              # Output for GitHub Actions
-              if "GITHUB_OUTPUT" in os.environ:
-                  with open(os.environ["GITHUB_OUTPUT"], "a") as f:
-                      f.write(f"access_token={access_token}\n")
-                      f.write(f"new_refresh_token={new_refresh_token}\n")
-                      f.write(f"expires_at={new_expires_at}\n")
-                      f.write(f"token_refreshed=true\n")
-              
-              # Mask the token in logs
-              print(f"::add-mask::{access_token}")
-              
-          except Exception as e:
-              print(f"❌ Error: {str(e)}")
-              # Check if it's a Cloudflare error
-              if "error code: 1010" in str(e):
-                  print("⚠️  OAuth token refresh is currently not available due to endpoint restrictions.")
-                  print("⚠️  Please use API key authentication instead or provide a valid access token.")
-              exit(1)
-          EOF
-
-      # Update secrets using Python and pynacl
-      - name: Update GitHub Secrets
-        if: steps.refresh_token.outcome == 'success' && steps.refresh_token.outputs.token_refreshed == 'true'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ACCESS_TOKEN: ${{ steps.refresh_token.outputs.access_token }}
-          REFRESH_TOKEN: ${{ steps.refresh_token.outputs.new_refresh_token }}
-          EXPIRES_AT: ${{ steps.refresh_token.outputs.expires_at }}
-        run: |
-          # Install required Python packages
-          pip install pynacl requests
-
-          # Update secrets using Python
-          python - << 'EOF'
-          import os
-          import json
-          import requests
-          from nacl import encoding, public
-
-          # Setup
-          token = os.environ['GITHUB_TOKEN']
-          repo = os.environ['GITHUB_REPOSITORY']
-          headers = {
-              'Authorization': f'token {token}',
-              'Accept': 'application/vnd.github.v3+json'
-          }
-
-          try:
-              # Get public key for encrypting secrets
-              key_response = requests.get(
-                  f'https://api.github.com/repos/{repo}/actions/secrets/public-key',
-                  headers=headers
-              )
-              key_response.raise_for_status()
-              key_data = key_response.json()
-              
-              # Encrypt and update a secret
-              def update_secret(name, value):
-                  if not value or value == 'undefined':
-                      return
-                      
-                  # Encrypt the value
-                  public_key = public.PublicKey(
-                      key_data['key'].encode("utf-8"), 
-                      encoding.Base64Encoder()
-                  )
-                  sealed_box = public.SealedBox(public_key)
-                  encrypted = sealed_box.encrypt(value.encode("utf-8"))
-                  encrypted_value = encoding.Base64Encoder().encode(encrypted).decode("utf-8")
-                  
-                  # Update the secret
-                  response = requests.put(
-                      f'https://api.github.com/repos/{repo}/actions/secrets/{name}',
-                      headers=headers,
-                      json={
-                          'encrypted_value': encrypted_value,
-                          'key_id': key_data['key_id']
-                      }
-                  )
-                  
-                  if response.status_code in [201, 204]:
-                      print(f'✓ Updated {name}')
-                  else:
-                      print(f'Failed to update {name}: {response.status_code} - {response.text}')
-                      raise Exception(f'Failed to update {name}')
-              
-              # Update all three secrets
-              if os.environ.get('ACCESS_TOKEN'):
-                  update_secret('CLAUDE_ACCESS_TOKEN', os.environ['ACCESS_TOKEN'])
-              if os.environ.get('REFRESH_TOKEN'):
-                  update_secret('CLAUDE_REFRESH_TOKEN', os.environ['REFRESH_TOKEN'])
-              if os.environ.get('EXPIRES_AT'):
-                  update_secret('CLAUDE_EXPIRES_AT', os.environ['EXPIRES_AT'])
-                  
-              print('✅ All secrets updated successfully')
-              
-          except Exception as e:
-              print(f'❌ Error updating secrets: {str(e)}')
-              import traceback
-              traceback.print_exc()
-              exit(1)
-          EOF
-
-      # Only run Claude action if this was triggered by a comment
-      - name: Run Claude Code Action (OAuth)
-        if: (github.event_name == 'issue_comment' || github.event_name == 'pull_request_review_comment') && steps.refresh_token.outcome == 'success'
+      # Step 3b: Retry Claude Code with refreshed tokens
+      - name: Run Claude Code Action (Refreshed OAuth)
+        id: claude_refreshed
+        if: |
+          (github.event_name == 'issue_comment' || github.event_name == 'pull_request_review_comment') && 
+          steps.claude_primary.outcome == 'failure' && 
+          steps.refresh_token.outcome == 'success'
+        continue-on-error: true
         uses: nimishchaudhari/claude-code-action-max-sub@main
         with:
           use_oauth: true
           claude_access_token: ${{ steps.refresh_token.outputs.access_token }}
-          claude_refresh_token: ${{ steps.refresh_token.outputs.new_refresh_token || secrets.CLAUDE_REFRESH_TOKEN }}
+          claude_refresh_token: ${{ steps.refresh_token.outputs.refresh_token }}
           claude_expires_at: ${{ steps.refresh_token.outputs.expires_at }}
           allowed_tools: 'Task,Bash,Glob,Grep,LS,Read,Edit,MultiEdit,Write,NotebookRead,NotebookEdit,TodoRead,TodoWrite,mcp__github_file_ops__commit_files,mcp__github_file_ops__delete_files,mcp__github__add_issue_comment,mcp__github__add_pull_request_review_comment,mcp__github__create_branch,mcp__github__create_issue,mcp__github__create_or_update_file,mcp__github__create_pull_request,mcp__github__create_pull_request_review,mcp__github__create_repository,mcp__github__delete_file,mcp__github__fork_repository,mcp__github__get_code_scanning_alert,mcp__github__get_commit,mcp__github__get_file_contents,mcp__github__get_issue,mcp__github__get_issue_comments,mcp__github__get_me,mcp__github__get_pull_request,mcp__github__get_pull_request_comments,mcp__github__get_pull_request_files,mcp__github__get_pull_request_reviews,mcp__github__get_pull_request_status,mcp__github__get_secret_scanning_alert,mcp__github__get_tag,mcp__github__list_branches,mcp__github__list_code_scanning_alerts,mcp__github__list_commits,mcp__github__list_issues,mcp__github__list_pull_requests,mcp__github__list_secret_scanning_alerts,mcp__github__list_tags,mcp__github__merge_pull_request,mcp__github__push_files,mcp__github__search_code,mcp__github__search_issues,mcp__github__search_repositories,mcp__github__search_users,mcp__github__update_issue,mcp__github__update_issue_comment,mcp__github__update_pull_request,mcp__github__update_pull_request_branch,mcp__github__update_pull_request_comment'
           custom_instructions: "You have also been granted tools for editing files and running bun commands (install, run, test, typecheck) for testing your changes: bun install, bun test, bun run format, bun typecheck."          
@@ -237,17 +97,56 @@ jobs:
           assignee_trigger: '@claude'
           model: 'claude-sonnet-4-20250514'
 
-      # Fallback to API key if OAuth refresh failed
+      # Final Fallback: API Key authentication if OAuth completely fails
       - name: Run Claude Code Action (API Key Fallback)
-        if: (github.event_name == 'issue_comment' || github.event_name == 'pull_request_review_comment') && steps.refresh_token.outcome == 'failure'
+        if: |
+          (github.event_name == 'issue_comment' || github.event_name == 'pull_request_review_comment') && 
+          steps.claude_primary.outcome == 'failure' && 
+          (steps.refresh_token.outcome == 'failure' || steps.claude_refreshed.outcome == 'failure')
         uses: nimishchaudhari/claude-code-action-max-sub@main
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          allowed_tools: 'Task,Bash,Glob,Grep,LS,Read,Edit,MultiEdit,Write,NotebookRead,NotebookEdit,TodoRead,TodoWrite,mcp__github_file_ops__commit_files,mcp__github_file_ops__delete_files,mcp__github__add_issue_comment,mcp__github__add_pull_request_review_comment,mcp__github__create_branch,mcp__github__create_issue,mcp__github__create_or_update_file,mcp__github__create_pull_request,mcp__github__create_pull_request_review,mcp__github__create_repository,mcp__github__delete_file,mcp__github__fork_repository,mcp__github__get_code_scanning_alert,mcp__github__get_commit,mcp__github__get_file_contents,mcp__github__get_issue,mcp__github__get_issue_comments,mcp__github__get_me,mcp__github__get_pull_request,mcp__github__get_pull_request_comments,mcp__github__get_pull_request_files,mcp__github__get_pull_request_reviews,mcp__github__get_pull_request_status,mcp__github__get_secret_scanning_alert,mcp__github__get_tag,mcp__github__list_branches,mcp__github__list_code_scanning_alerts,mcp__github__list_commits,mcp__github__list_issues,mcp__github__list_pull_requests,mcp__github__list_secret_scanning_alerts,mcp__github__list_tags,mcp__github__merge_pull_request,mcp__github__push_files,mcp__github__search_code,mcp__github__search_issues,mcp__github__search_repositories,mcp__github__search_users,mcp__github__update_issue,mcp__github__update_issue_comment,mcp__github__update_pull_request,mcp__github__update_pull_request_branch,mcp__github__update_pull_request_comment'
+          custom_instructions: "You have also been granted tools for editing files and running bun commands (install, run, test, typecheck) for testing your changes: bun install, bun test, bun run format, bun typecheck."          
+          timeout_minutes: "60"
+          assignee_trigger: '@claude'
           anthropic_model: "claude-opus-4-20250514"
 
-      # Log success for scheduled runs
-      - name: Log Scheduled Refresh Success
+      # Scheduled token refresh (no Claude Code execution)
+      - name: Scheduled Token Refresh
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        env:
+          CLAUDE_REFRESH_TOKEN: ${{ secrets.CLAUDE_REFRESH_TOKEN }}
+          UPDATE_GITHUB_SECRET: true
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
+          echo "🔄 Performing scheduled token refresh..."
+          echo "🔐 Using $([ -n "${{ secrets.PAT_TOKEN }}" ] && echo "Personal Access Token" || echo "GitHub Token")"
+          
+          # Use the proven working Node.js script
+          node scripts/refresh-token.js
+          
           echo "✅ Scheduled token refresh completed successfully"
           echo "Next refresh will occur at the next scheduled time"
+
+      # Log authentication status summary
+      - name: Log Authentication Status
+        if: always() && (github.event_name == 'issue_comment' || github.event_name == 'pull_request_review_comment')
+        run: |
+          echo "🔍 Authentication Status Summary:"
+          echo "Primary OAuth attempt: ${{ steps.claude_primary.outcome }}"
+          echo "Token refresh result: ${{ steps.refresh_token.outcome }}"
+          echo "Refreshed OAuth attempt: ${{ steps.claude_refreshed.outcome }}"
+          
+          if [[ "${{ steps.claude_primary.outcome }}" == "success" ]]; then
+            echo "✅ Claude Code executed successfully with existing OAuth tokens"
+          elif [[ "${{ steps.claude_refreshed.outcome }}" == "success" ]]; then
+            echo "✅ Claude Code executed successfully after token refresh"
+          elif [[ "${{ steps.refresh_token.outcome }}" == "failure" ]]; then
+            echo "⚠️  Token refresh failed - used API key fallback"
+            echo "💡 Consider checking OAuth endpoint accessibility and refresh token validity"
+          else
+            echo "✅ Claude Code executed with API key fallback"
+          fi
