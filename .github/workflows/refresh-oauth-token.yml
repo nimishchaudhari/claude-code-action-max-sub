@@ -1,0 +1,42 @@
+name: Refresh OAuth Token
+
+on:
+  workflow_dispatch:
+    inputs:
+      update_secrets:
+        description: 'Update GitHub secrets with new tokens'
+        required: false
+        default: true
+        type: boolean
+
+jobs:
+  refresh-token:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+      secrets: write
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Refresh OAuth Token
+        env:
+          CLAUDE_REFRESH_TOKEN: ${{ secrets.CLAUDE_REFRESH_TOKEN }}
+          UPDATE_GITHUB_SECRET: ${{ inputs.update_secrets }}
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          node scripts/refresh-token.js
+      
+      - name: Verify token refresh
+        if: success()
+        run: |
+          echo "✅ OAuth token refreshed successfully"
+          echo "Token refresh completed at: $(date)"
