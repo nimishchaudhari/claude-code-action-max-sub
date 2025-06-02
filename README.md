@@ -28,6 +28,7 @@ This option refreshes the token on each run without updating GitHub secrets.
      contents: write
      issues: write
      pull-requests: write
+     id-token: write # Required for OIDC authentication
 
    jobs:
      claude-with-refresh:
@@ -175,6 +176,7 @@ If OAuth token refresh is not working due to endpoint restrictions, use API key 
      contents: write
      issues: write
      pull-requests: write
+     id-token: write # Required for OIDC authentication
 
    jobs:
      claude:
@@ -210,8 +212,14 @@ If OAuth token refresh is not working due to endpoint restrictions, use API key 
    - Fallback to API key authentication is recommended
 
 4. **Claude doesn't respond**
+
    - Ensure comment contains `@claude`
    - Check workflow permissions are set correctly
+
+5. **Permission Issues with Commits and PRs**
+   - If Claude cannot commit or create pull requests, see [Permissions Troubleshooting Guide](docs/PERMISSIONS_TROUBLESHOOTING.md)
+   - Ensure your workflow has the correct permissions block
+   - Verify repository settings allow Actions to write
 
 ### Debug Tips
 
